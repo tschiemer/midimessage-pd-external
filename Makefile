@@ -10,6 +10,10 @@ all:
 	$(MAKE) -C src/midimessage_gen
 	$(MAKE) -C src/midimessage_parse
 	
+midimessage:
+	cd $(MIDIMESSAGE_DIR) ; cmake . ;
+	$(MAKE) -C $(MIDIMESSAGE_DIR)
+	
 install:
 	$(MAKE) -C src/midimessage_gen install
 	$(MAKE) -C src/midimessage_parse install
