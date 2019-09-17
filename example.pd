@@ -1,0 +1,39 @@
+#N canvas 584 265 514 425 12;
+#X msg 44 111 runningstatus \$1;
+#X obj 25 111 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 0
+1;
+#X msg 168 27 note on 1 1 1;
+#X obj 75 185 print midiout;
+#X msg 297 26 note invalid 11 1;
+#X msg 166 60 note off 1 1 1;
+#X obj 211 144 midimessage_gen;
+#X obj 209 326 midimessage_parse;
+#X obj 207 366 print midiin;
+#X obj 324 366 print discarded;
+#X msg 42 234 runningstatus \$1;
+#X obj 21 237 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 0
+1;
+#X obj 21 261 tgl 15 0 empty empty empty 17 7 0 10 -262144 -1 -1 0
+1;
+#X msg 42 259 outputdiscarded \$1;
+#X obj 250 202 midiout;
+#X obj 250 245 midiin;
+#X obj 249 297 sysexin;
+#X obj 249 272 midirealtimein;
+#X connect 0 0 6 0;
+#X connect 1 0 0 0;
+#X connect 2 0 6 0;
+#X connect 4 0 6 0;
+#X connect 5 0 6 0;
+#X connect 6 0 3 0;
+#X connect 6 0 7 0;
+#X connect 6 0 14 0;
+#X connect 7 0 8 0;
+#X connect 7 1 9 0;
+#X connect 10 0 7 0;
+#X connect 11 0 10 0;
+#X connect 12 0 13 0;
+#X connect 13 0 7 0;
+#X connect 15 0 7 0;
+#X connect 16 0 7 0;
+#X connect 17 0 7 0;
