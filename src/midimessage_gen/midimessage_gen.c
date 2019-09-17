@@ -1,12 +1,7 @@
 /*
- * HOWTO write an External for Pure data
- * (c) 2001-2006 IOhannes m zm�lnig zmoelnig[AT]iem.at
- *
- * this is the source-code for the second example in the HOWTO
- * it creates an object that increments and outputs a midimessage_gen
- * whenever it gets banged.
- *
- * for legal issues please see the file LICENSE.txt
+ * @file
+ * @copyright 2019 Philip Tschiemer, https://filou.se
+ * @license MIT
  */
 
 
