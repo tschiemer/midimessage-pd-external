@@ -20,6 +20,8 @@
 #X obj 250 245 midiin;
 #X obj 249 297 sysexin;
 #X obj 249 272 midirealtimein;
+#X msg 304 67 nrpn 1 2 3;
+#X msg 313 95 nrpn 1 2 inc 4;
 #X connect 0 0 6 0;
 #X connect 1 0 0 0;
 #X connect 2 0 6 0;
@@ -37,3 +39,5 @@
 #X connect 15 0 7 0;
 #X connect 16 0 7 0;
 #X connect 17 0 7 0;
+#X connect 18 0 6 0;
+#X connect 19 0 6 0;

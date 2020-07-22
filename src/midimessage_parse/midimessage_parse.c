@@ -10,9 +10,9 @@
  * include the interface to Pd
  */
 #include "m_pd.h"
-#include <midimessage.h>
+#include <midimessage/midimessage.h>
 #include <midimessage/stringifier.h>
-#include <midimessage/parser.h>
+#include <midimessage/simpleparser.h>
 #include <string.h>
 
 
@@ -32,12 +32,11 @@ static t_class *midimessage_parse_class;
 typedef struct _midimessage_parse {
     t_object  x_obj;
     t_outlet *list_out;
+    t_outlet *nrpn_out;
     t_outlet *discarded_out;
     bool outputDiscardedEnabled;
-    Parser_t parser;
-    uint8_t buffer[128];
-    Message_t message;
-    uint8_t msgBuffer[128];
+    SimpleParser_t parser;
+    uint8_t parserBuffer[128];
 } t_midimessage_parse;
 
 
@@ -46,8 +45,10 @@ void *midimessage_parse_new();
 void midimessage_parse_outputdiscarded(t_midimessage_parse *self, t_floatarg f);
 void midimessage_parse_runningstatus(t_midimessage_parse *self, t_floatarg f);
 void midimessage_parse_float(t_midimessage_parse *self, t_floatarg f);
-void messageHandler(Message_t *msg, void * context);
-void discardedHandler(uint8_t * bytes, uint8_t len, void * context);
+
+void nrpnHandler(uint8_t channel, NRpnType_t type, NRpnAction_t action, uint16_t controller, uint16_t value, void *context);
+void messageHandler(uint8_t *message, uint16_t message_length, void * context);
+void discardedHandler(uint8_t * bytes, uint16_t len, void * context);
 
 /**
  * define the function-space of the class
@@ -85,13 +86,12 @@ void *midimessage_parse_new()
 
 
     self->list_out = outlet_new(&self->x_obj, gensym(""));
+    self->nrpn_out = outlet_new(&self->x_obj, &s_list);
     self->discarded_out = outlet_new(&self->x_obj, &s_list);
 
     self->outputDiscardedEnabled = false;
 
-    self->message.Data.SysEx.ByteData = self->msgBuffer;
-
-    parser_init( &self->parser, false, self->buffer, 128, &self->message, messageHandler, discardedHandler, self);
+    simpleparser_init( &self->parser, false, self->parserBuffer, sizeof(self->parserBuffer), messageHandler, nrpnHandler, discardedHandler, self);
 
     return (void *)self;
 }
@@ -106,21 +106,72 @@ void midimessage_parse_runningstatus(t_midimessage_parse *self, t_floatarg f)
     self->parser.RunningStatusEnabled = (bool)f;
 }
 
-
-
 void midimessage_parse_float(t_midimessage_parse *self, t_floatarg f)
 {
     uint8_t byte = f;
 
-    parser_receivedData( &self->parser, &byte, 1 );
+    simpleparser_receivedData( &self->parser, &byte, 1 );
 }
 
-void messageHandler(Message_t *msg, void * context){
+void nrpnHandler(uint8_t channel, NRpnType_t type, NRpnAction_t action, uint16_t controller, uint16_t value, void *context)
+{
     t_midimessage_parse * self = (t_midimessage_parse*)context;
+    char argv[5][16];
+    int argc = 0;
+
+    if (type == NRpnTypeRPN){
+      strcpy(argv[0], "rpn");
+    } else if (type == NRpnTypeNRPN) {
+      strcpy(argv[0], "nrpn");
+    } else {
+      return;
+    }
+
+    sprintf(argv[1], "%d", channel);
+
+    sprintf(argv[2], "%d", controller);
+
+    if (action == NRpnActionValue){
+      sprintf(argv[3], "%d", value);
+      argc = 4;
+    } else if (action == NRpnActionIncrement){
+      strcpy(argv[3], "inc");
+      sprintf(argv[4], "%d", value);
+      argc = 5;
+    } else if (action == NRpnActionIncrement){
+      strcpy(argv[3], "dec");
+      sprintf(argv[4], "%d", value);
+      argc = 5;
+    } else {
+      return;
+    }
+
+    t_atom atoms[5];
+    for(uint8_t i = 1; i < argc; i++){
+        SETSYMBOL(&atoms[i-1], gensym((char*)argv[i]));
+    }
+
+
+    outlet_anything( self->list_out, gensym((char*)argv[0]), argc-1, atoms);
+}
+
+void messageHandler(uint8_t *message, uint16_t message_length, void * context){
+
+    t_midimessage_parse * self = (t_midimessage_parse*)context;
+
+    Message_t msg;
+    uint8_t msgBuffer[128];
+
+    msg.Data.SysEx.ByteData = msgBuffer;
+
+    if (unpack( message, message_length, &msg ) == false){
+      return;
+    }
+
 
     uint8_t bytes[256];
 
-    int length = MessagetoString(  bytes, msg );
+    int length = MessagetoString(  bytes, &msg );
 
     if (length <= 0){
         return;
@@ -142,7 +193,7 @@ void messageHandler(Message_t *msg, void * context){
     outlet_anything( self->list_out, gensym((char*)argv[0]), argc - 1, atoms);
 }
 
-void discardedHandler(uint8_t * bytes, uint8_t len, void * context){
+void discardedHandler(uint8_t * bytes, uint16_t len, void * context){
     t_midimessage_parse * self = (t_midimessage_parse*)context;
 
     if ( ! self->outputDiscardedEnabled ){

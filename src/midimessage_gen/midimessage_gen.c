@@ -10,7 +10,8 @@
  * include the interface to Pd
  */
 #include "m_pd.h"
-#include <midimessage.h>
+#include <midimessage/midimessage.h>
+#include <midimessage/commonccs.h>
 #include <midimessage/stringifier.h>
 #include <string.h>
 
@@ -40,6 +41,7 @@ void midimessage_gen_runningstatus(t_midimessage_gen *self, t_floatarg f);
 void midimessage_gen_anything(t_midimessage_gen *self, t_symbol *s, int argc, t_atom *argv);
 void midimessage_gen_generatorError(int code, uint8_t argc, uint8_t ** argv);
 
+static void midimessage_gen_write_message(t_midimessage_gen * self, Message_t * msg);
 
 /**
  * define the function-space of the class
@@ -95,6 +97,29 @@ void midimessage_gen_runningstatus(t_midimessage_gen *self, t_floatarg f)
 }
 
 
+void midimessage_gen_write_message(t_midimessage_gen * self, Message_t * msg){
+
+    uint8_t bytes[128];
+    uint8_t length = pack( bytes, msg );
+
+    if (length == 0){
+        return;
+    }
+
+    uint8_t * start = bytes;
+
+    if (self->runningStatusEnabled && updateRunningStatus( &self->runningStatusState, bytes[0] )){
+        start = &start[1];
+        length--;
+    }
+
+    // output byte by byte as number
+    for (uint8_t i = 0; i < length; i++){
+        t_float f = start[i];
+        outlet_float( self->byte_out, f );
+    }
+}
+
 void midimessage_gen_anything(t_midimessage_gen *self, t_symbol *s, int argc, t_atom *argv)
 {
     if (argc > 32){
@@ -126,39 +151,115 @@ void midimessage_gen_anything(t_midimessage_gen *self, t_symbol *s, int argc, t_
 //        post("argv[%d] = %s", i+1, argvStr[i+1]);
     }
 
+    //
+    argc++;
+
     //  try to turn into message
     uint8_t sysexBuffer[128];
     Message_t msg;
     msg.Data.SysEx.ByteData = sysexBuffer;
 
-    int result = MessagefromArgs( &msg, argc+1, argvStr );
+    if (strcmp((char*)argvStr[0], "nrpn") == 0){
 
-    if (StringifierResultOk != result){
-        midimessage_gen_generatorError(result, argc+1, argvStr);
-        return;
+        if (argc < 4 || 5 < argc) {
+            midimessage_gen_generatorError(StringifierResultWrongArgCount, argc, argvStr);
+            return;
+        }
+        msg.StatusClass = StatusClassControlChange;
+        msg.Channel = atoi((char*)argvStr[1]);
+
+        if (msg.Channel > MaxU7) {
+            midimessage_gen_generatorError(StringifierResultInvalidU7, argc, argvStr);
+            return;
+        }
+
+        uint16_t controller = atoi((char*)argvStr[2]);
+
+        if (controller > MaxU14) {
+            midimessage_gen_generatorError(StringifierResultInvalidU14, argc, argvStr);
+            return;
+        }
+
+        uint8_t action = 0;
+        uint16_t value = 0;
+
+        if (strcmp((char*)argvStr[3], "inc") == 0){
+
+            action = CcDataIncrement;
+
+            if (argc == 5) {
+                value = atoi((char*)argvStr[4]);
+
+                if (value > MaxU7) {
+                    midimessage_gen_generatorError(StringifierResultInvalidU14, argc, argvStr);
+                    return;
+                }
+            }
+        }
+        else if (strcmp((char*)argvStr[3], "dec") == 0){
+
+            action = CcDataDecrement;
+
+            if (argc == 5) {
+                value = atoi((char*)argvStr[4]);
+
+                if (value > MaxU7) {
+                    midimessage_gen_generatorError(StringifierResultInvalidU14, argc, argvStr);
+                    return;
+                }
+            }
+
+        } else {
+
+          if (argc != 4) {
+              midimessage_gen_generatorError(StringifierResultWrongArgCount, argc, argvStr);
+              return;
+          }
+
+          action = CcDataEntryMSB;
+          value = atoi((char*)argvStr[3]);
+
+          if (value > MaxU14) {
+              midimessage_gen_generatorError(StringifierResultInvalidU14, argc, argvStr);
+              return;
+          }
+        }
+
+        msg.Data.ControlChange.Controller = CcNonRegisteredParameterMSB;
+        msg.Data.ControlChange.Value = (controller >> 7) & DataMask;
+        midimessage_gen_write_message(self, &msg);
+
+        msg.Data.ControlChange.Controller = CcNonRegisteredParameterLSB;
+        msg.Data.ControlChange.Value = controller & DataMask;
+        midimessage_gen_write_message(self, &msg);
+
+        if (action == CcDataEntryMSB){
+            msg.Data.ControlChange.Controller = CcDataEntryMSB;
+            msg.Data.ControlChange.Value = (value >> 7) & DataMask;
+            midimessage_gen_write_message(self, &msg);
+
+            msg.Data.ControlChange.Controller = CcDataEntryLSB;
+            msg.Data.ControlChange.Value = value & DataMask;
+            midimessage_gen_write_message(self, &msg);
+        } else {
+            msg.Data.ControlChange.Controller = action;
+            msg.Data.ControlChange.Value = value & DataMask;
+            midimessage_gen_write_message(self, &msg);
+        }
+
+    } else {
+
+          int result = MessagefromArgs( &msg, argc, argvStr );
+
+          if (StringifierResultOk != result){
+              midimessage_gen_generatorError(result, argc, argvStr);
+              return;
+          }
+
+          midimessage_gen_write_message(self, &msg);
     }
 
 
-    // turn message into byte sequence
-    uint8_t bytes[128];
-    uint8_t length = pack( bytes, &msg );
-
-    if (length == 0){
-        return;
-    }
-
-    // prepare output
-    uint8_t * output = bytes;
-    if (self->runningStatusEnabled && updateRunningStatus( &self->runningStatusState, bytes[0] )){
-        output = &bytes[1];
-        length--;
-    }
-
-    // output byte by byte as number
-    for (uint8_t i = 0; i < length; i++){
-        t_float f = output[i];
-        outlet_float( self->byte_out, f );
-    }
 }
 
 
@@ -207,5 +308,3 @@ void midimessage_gen_generatorError(int code, uint8_t argc, uint8_t ** argv){
             post("unknown error??? %s", argv[0]);
     }
 }
-
-
